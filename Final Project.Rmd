@@ -1,0 +1,101 @@
+---
+title: "NFL Stats"
+author: "Anirudh Kamath and Nikita Jethani"
+date: "3/24/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(RSQLite)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# Remove spaces in column names and replace periods with underscores so it's easier to read in SQL
+clean_columns <- function(df, include_name_year) {
+  df[df=="--"]<-NA
+  oldnames <- names(df)
+  newnames <- oldnames %>%
+      sapply(tolower) %>%
+      sapply(function(x) {gsub('\\.$', '', x)}) %>%
+      sapply(function(x) {gsub('(\\.)\\1+', '_', x)}) %>%
+      sapply(function(x) {gsub('\\.', '_', x)})
+  df <- df %>% rename_at(vars(oldnames), ~ newnames)
+  if(missing(include_name_year)) {
+    return(df %>% select(-name, -position))
+  }
+  return(df)
+  dbWriteTable(conn = db, name = "unemployment", value = df, row.names = FALSE, header = TRUE)
+}
+
+basic_stats = read.csv('Basic_Stats.csv') %>% clean_columns(T)
+defensive_stats = read.csv('Career_Stats_Defensive.csv') %>% clean_columns()
+fg_kicker_stats = read.csv('Career_Stats_Field_Goal_Kickers.csv') %>% clean_columns()
+fumble_stats = read.csv('Career_Stats_Fumbles.csv') %>% clean_columns()
+kick_return_stats = read.csv('Career_Stats_Kick_Return.csv') %>% clean_columns()
+kickoff_stats = read.csv('Career_Stats_Kickoff.csv') %>% clean_columns()
+OL_stats = read.csv('Career_Stats_Offensive_Line.csv') %>% clean_columns()
+passing_stats = read.csv('Career_Stats_Passing.csv') %>% clean_columns()
+punt_return_stats = read.csv('Career_Stats_Punt_Return.csv') %>% clean_columns()
+punting_stats = read.csv('Career_Stats_Punting.csv') %>% clean_columns()
+receiving_stats = read.csv('Career_Stats_Receiving.csv') %>% clean_columns()
+rushing_stats = read.csv('Career_Stats_Rushing.csv') %>% clean_columns()
+
+DL_logs = read.csv('Game_Logs_Defensive_Lineman.csv') %>% clean_columns()
+kicker_logs = read.csv('Game_Logs_Kickers.csv') %>% clean_columns()
+OL_logs = read.csv('Game_Logs_Offensive_Line.csv') %>% clean_columns()
+punter_logs = read.csv('Game_Logs_Punters.csv') %>% clean_columns()
+QB_logs = read.csv('Game_Logs_Quarterback.csv') %>% clean_columns()
+RB_logs = read.csv('Game_Logs_Runningback.csv') %>% clean_columns()
+WR_TE_logs = read.csv('Game_Logs_Wide_Receiver_and_Tight_End.csv') %>% clean_columns()
+
+# Clean the experience - "1st season"/"Rookie" should equate to 0 seasons, and things like "8th season" or "3rd season" should equate to 7 and 2 seasons respectively. 
+basic_stats['experience'] <- basic_stats['experience'] %>%
+  sapply(tolower) %>%
+  sapply(function(x) {x %>% str_replace_all('1st', '0')}) %>%
+  sapply(function(x) {x %>% str_replace_all('rookie', '0')}) %>%
+  sapply(function(x) {x %>% str_replace_all('first', '0')}) %>%
+  sapply(function(x) {x %>% str_replace('season', '')}) %>%
+  sapply(function(x) {gsub("^\\s+|\\s+$", "", x)}) %>%
+  sapply(function(x) {
+    if(is.na(x)) {return(x)}
+    if(str_detect(x, ' s')) {
+      return(x %>% str_replace(' s', '') %>% as.numeric())
+    }
+    else {
+      tor <- x %>% str_replace("\\D*(\\d+).*", "\\1") %>% as.numeric()
+      if(!is.na(tor) && tor > 1) {return(tor - 1)}
+      return(tor)
+    }
+  }) %>%
+  as.numeric()
+
+# We only want active players, and we want to separate their birth place (city, state) into two columns. Same with their names
+basic_stats <- basic_stats %>%
+  filter(current_status == 'Active') %>%
+  separate(birth_place, into = c("birth_city", "birth_state"), sep = " , ") %>%
+  separate(name, into = c("last_name", "first_name"), sep = ", ")
+
+db <- dbConnect(SQLite(), dbname="nfl.sqlite")
+```
+
+```{r}
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
