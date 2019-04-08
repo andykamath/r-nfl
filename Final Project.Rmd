@@ -9,6 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(RSQLite)
+library(gridExtra)
 ```
 
 ## R Markdown
@@ -88,17 +89,20 @@ dbListTables(db)
 ```{r}
 basics <- dbGetQuery(db, 'select * from basic_stats')
 basics[,'fantasy_score'] <- 0
+basics
 ```
 
 ```{r}
 # Let's rank players based on their passing abilities
 updateScore <- function(df, newdf) {
-   temp <- df %>%
+  newdf$points[is.na(newdf$points)] <- 0
+  temp <- df %>%
     select(player_id, fantasy_score) %>%
-    inner_join(newdf, by='player_id')
+    left_join(newdf, by='player_id')
   temp$fantasy_score <- temp$fantasy_score + temp$points 
   temp <- temp %>% select(player_id, fantasy_score)
   df <- df %>% left_join(temp, by='player_id', suffix=c('_old', '')) %>% select(-fantasy_score_old) 
+  df$fantasy_score[is.na(df$fantasy_score)] <- 0
   return(df)
 }
 
@@ -110,9 +114,10 @@ passers <- dbGetQuery(db, paste("select first_name, last_name, basic_stats.playe
   "from career_stats_passing",
   "join basic_stats on basic_stats.player_id=career_stats_passing.player_id",
   "where year = 2016",
+  "group by basic_stats.player_id",
   "order by points desc"))
 basics <- basics %>% updateScore(passers) %>% arrange(desc(fantasy_score))
-basics
+basics %>% select(position, first_name, last_name, fantasy_score)
 ```
 
 
@@ -124,9 +129,136 @@ rushers <- dbGetQuery(db, paste("select first_name, last_name, basic_stats.playe
   "from career_stats_rushing",
   "join basic_stats on basic_stats.player_id=career_stats_rushing.player_id",
   "where year = 2016",
+  "group by basic_stats.player_id",
   "order by points desc"))
 basics <- basics %>% updateScore(rushers) %>% arrange(desc(fantasy_score))
-basics
+rushers
+basics %>% select(position, first_name, last_name, fantasy_score)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+# Reception!
+reception <- dbGetQuery(db, paste("select first_name, last_name, basic_stats.player_id, year, team, position, ",
+  "(60 * receiving_tds + receiving_yards)/(10 * games_played) as points",
+  "from career_stats_receiving",
+  "join basic_stats on basic_stats.player_id=career_stats_receiving.player_id",
+  "where year = 2016",
+  "group by basic_stats.player_id",
+  "order by points desc"))
+basics <- basics %>% updateScore(reception) %>% arrange(desc(fantasy_score))
+basics %>% select(position, first_name, last_name, fantasy_score)
+```
+
+```{r}
+# Putting everything together - density plots
+offensive_positions <- basics[!duplicated(basics$position), ] %>% filter(fantasy_score > 0) %>% select(position)
+
+ggplot(basics %>% filter(position == 'QB') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(aes(y=..density..), colour="black", fill="white", bins=10)+
+    geom_density(alpha=.2, fill="#FF6666") +
+    ggtitle('QB')
+
+ggplot(basics %>% filter(position == 'WR') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(aes(y=..density..), colour="black", fill="white", bins=10)+
+    geom_density(alpha=.2, fill="#FF6666") +
+    ggtitle('WR')
+
+ggplot(basics %>% filter(position == 'TE') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(aes(y=..density..), colour="black", fill="white", bins=10)+
+    geom_density(alpha=.2, fill="#FF6666") +
+    ggtitle('TE')
+
+ggplot(basics %>% filter(position == 'RB') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(aes(y=..density..), colour="black", fill="white", bins=10)+
+    geom_density(alpha=.2, fill="#FF6666") +
+    ggtitle('RB')
+
+ggplot(basics %>% filter(position == 'FB') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(aes(y=..density..), colour="black", fill="white", bins=10)+
+    geom_density(alpha=.2, fill="#FF6666") +
+    ggtitle('FB')
+```
+
+```{r}
+offensive_positions <- basics[!duplicated(basics$position), ] %>% filter(fantasy_score > 0) %>% select(position)
+
+ggplot(basics %>% filter(position == 'QB') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(bins=10) +
+    ggtitle('QB')
+
+ggplot(basics %>% filter(position == 'WR') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(bins=10) +
+    ggtitle('WR')
+
+ggplot(basics %>% filter(position == 'RB') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(bins=10) +
+    ggtitle('RB')
+
+ggplot(basics %>% filter(position == 'FB') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(bins=10) +
+    ggtitle('FB')
+
+ggplot(basics %>% filter(position == 'TE') %>% filter(fantasy_score > 0), aes(x=fantasy_score)) + 
+    geom_histogram(bins=10) +
+    ggtitle('TE')
+```
+
+```{r}
+get_lead <- function(df, position) {
+  lead <- df %>% filter(position == position) %>% select(fantasy_score) %>% as.matrix() %>% diff()
+  lead <- c(lead, 0)
+  temp <- df %>% filter(position == position)
+  temp$lead <- lead
+  return(temp)
+}
+
+get_xlead <- function(df, n_players) {
+  for(x in 1:n_players) {
+    lead <- c()
+    for(i in 1:nrow(df)) {
+      if(i + x > nrow(df)) lead = c(lead, 0)
+      else lead = c(lead, df$fantasy_score[i] - df$fantasy_score[i + x])
+    }
+    df[paste('lead', x, sep='_')] = lead 
+  }
+  return(df)
+}
+
+#qb <- basics %>% get_lead('QB')
+#wr <- basics %>% get_lead('WR')
+#te <- basics %>% get_lead('TE')
+#fb <- basics %>% get_lead('FB')
+#rb <- basics %>% get_lead('RB')
+
+num_players = 4
+positions <- list('QB', 'WR', 'TE', 'FB', 'RB')
+tobind <- list()
+for(i in 1:length(positions)) {
+  tobind[[i]] = get_xlead(basics %>% filter(position == positions[i]), num_players)
+}
+final <- bind_rows(tobind)
+df <- final
+df %>% 
+  arrange(desc(fantasy_score)) %>%
+  select(-birth_city, -birth_state, -birthday, -college, -current_status, -height_inches, -high_school, -high_school_location, -number, -player_id, -weight_lbs, -years_played, -age, -experience, -current_team) %>%
+  distinct(position, .keep_all=T)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
