@@ -18,9 +18,42 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r cars}
+clean_basic_stats <- function(basic_stats) {
+  # Clean the experience - "1st season"/"Rookie" should equate to 0 seasons, and things like "8th season" or "3rd season" should     equate to 7 and 2 seasons respectively. 
+  basic_stats['experience'] <- basic_stats['experience'] %>%
+    sapply(tolower) %>%
+    sapply(function(x) {x %>% str_replace_all('1st', '0')}) %>%
+    sapply(function(x) {x %>% str_replace_all('rookie', '0')}) %>%
+    sapply(function(x) {x %>% str_replace_all('first', '0')}) %>%
+    sapply(function(x) {x %>% str_replace('season', '')}) %>%
+    sapply(function(x) {gsub("^\\s+|\\s+$", "", x)}) %>%
+    sapply(function(x) {
+      if(is.na(x)) {return(x)}
+      if(str_detect(x, ' s')) {
+        return(x %>% str_replace(' s', '') %>% as.numeric())
+      }
+      else {
+        tor <- x %>% str_replace("\\D*(\\d+).*", "\\1") %>% as.numeric()
+        if(!is.na(tor) && tor > 1) {return(tor - 1)}
+        return(tor)
+      }
+    }) %>%
+    as.numeric()
+  
+  # We only want active players, and we want to separate their birth place (city, state) into two columns. Same with their names
+  basic_stats <- basic_stats %>%
+    filter(current_status == 'Active') %>%
+    separate(birth_place, into = c("birth_city", "birth_state"), sep = " , ") %>%
+    separate(name, into = c("last_name", "first_name"), sep = ", ")
+  return(basic_stats)
+}
+
 # Remove spaces in column names and replace periods with underscores so it's easier to read in SQL
-clean_columns <- function(df, include_name_year) {
+clean_columns <- function(df, db, include_name_year) {
+  name <- str_replace(df, '.csv', '') %>% str_to_lower()
+  df <- read.csv(df)
   df[df=="--"]<-NA
+  print(name)
   oldnames <- names(df)
   newnames <- oldnames %>%
       sapply(tolower) %>%
@@ -28,66 +61,43 @@ clean_columns <- function(df, include_name_year) {
       sapply(function(x) {gsub('(\\.)\\1+', '_', x)}) %>%
       sapply(function(x) {gsub('\\.', '_', x)})
   df <- df %>% rename_at(vars(oldnames), ~ newnames)
-  if(missing(include_name_year)) {
-    return(df %>% select(-name, -position))
+  if(name == 'basic_stats') {
+    df <- clean_basic_stats(df)
   }
+  if(missing(include_name_year)) {
+    df <- df %>% select(-name, -position)
+  }
+  dbWriteTable(conn = db, name = name, value = df, row.names = FALSE, header = TRUE)
   return(df)
-  dbWriteTable(conn = db, name = "unemployment", value = df, row.names = FALSE, header = TRUE)
 }
 
-basic_stats = read.csv('Basic_Stats.csv') %>% clean_columns(T)
-defensive_stats = read.csv('Career_Stats_Defensive.csv') %>% clean_columns()
-fg_kicker_stats = read.csv('Career_Stats_Field_Goal_Kickers.csv') %>% clean_columns()
-fumble_stats = read.csv('Career_Stats_Fumbles.csv') %>% clean_columns()
-kick_return_stats = read.csv('Career_Stats_Kick_Return.csv') %>% clean_columns()
-kickoff_stats = read.csv('Career_Stats_Kickoff.csv') %>% clean_columns()
-OL_stats = read.csv('Career_Stats_Offensive_Line.csv') %>% clean_columns()
-passing_stats = read.csv('Career_Stats_Passing.csv') %>% clean_columns()
-punt_return_stats = read.csv('Career_Stats_Punt_Return.csv') %>% clean_columns()
-punting_stats = read.csv('Career_Stats_Punting.csv') %>% clean_columns()
-receiving_stats = read.csv('Career_Stats_Receiving.csv') %>% clean_columns()
-rushing_stats = read.csv('Career_Stats_Rushing.csv') %>% clean_columns()
-
-DL_logs = read.csv('Game_Logs_Defensive_Lineman.csv') %>% clean_columns()
-kicker_logs = read.csv('Game_Logs_Kickers.csv') %>% clean_columns()
-OL_logs = read.csv('Game_Logs_Offensive_Line.csv') %>% clean_columns()
-punter_logs = read.csv('Game_Logs_Punters.csv') %>% clean_columns()
-QB_logs = read.csv('Game_Logs_Quarterback.csv') %>% clean_columns()
-RB_logs = read.csv('Game_Logs_Runningback.csv') %>% clean_columns()
-WR_TE_logs = read.csv('Game_Logs_Wide_Receiver_and_Tight_End.csv') %>% clean_columns()
-
-# Clean the experience - "1st season"/"Rookie" should equate to 0 seasons, and things like "8th season" or "3rd season" should equate to 7 and 2 seasons respectively. 
-basic_stats['experience'] <- basic_stats['experience'] %>%
-  sapply(tolower) %>%
-  sapply(function(x) {x %>% str_replace_all('1st', '0')}) %>%
-  sapply(function(x) {x %>% str_replace_all('rookie', '0')}) %>%
-  sapply(function(x) {x %>% str_replace_all('first', '0')}) %>%
-  sapply(function(x) {x %>% str_replace('season', '')}) %>%
-  sapply(function(x) {gsub("^\\s+|\\s+$", "", x)}) %>%
-  sapply(function(x) {
-    if(is.na(x)) {return(x)}
-    if(str_detect(x, ' s')) {
-      return(x %>% str_replace(' s', '') %>% as.numeric())
-    }
-    else {
-      tor <- x %>% str_replace("\\D*(\\d+).*", "\\1") %>% as.numeric()
-      if(!is.na(tor) && tor > 1) {return(tor - 1)}
-      return(tor)
-    }
-  }) %>%
-  as.numeric()
-
-# We only want active players, and we want to separate their birth place (city, state) into two columns. Same with their names
-basic_stats <- basic_stats %>%
-  filter(current_status == 'Active') %>%
-  separate(birth_place, into = c("birth_city", "birth_state"), sep = " , ") %>%
-  separate(name, into = c("last_name", "first_name"), sep = ", ")
-
 db <- dbConnect(SQLite(), dbname="nfl.sqlite")
+basic_stats = clean_columns('Basic_Stats.csv', db, T)
+defensive_stats = clean_columns('Career_Stats_Defensive.csv', db)
+fg_kicker_stats = clean_columns('Career_Stats_Field_Goal_Kickers.csv', db)
+fumble_stats = clean_columns('Career_Stats_Fumbles.csv', db)
+kick_return_stats = clean_columns('Career_Stats_Kick_Return.csv', db)
+kickoff_stats = clean_columns('Career_Stats_Kickoff.csv', db)
+OL_stats = clean_columns('Career_Stats_Offensive_Line.csv', db)
+passing_stats = clean_columns('Career_Stats_Passing.csv', db)
+punt_return_stats = clean_columns('Career_Stats_Punt_Return.csv', db)
+punting_stats = clean_columns('Career_Stats_Punting.csv', db)
+receiving_stats = clean_columns('Career_Stats_Receiving.csv', db)
+rushing_stats = clean_columns('Career_Stats_Rushing.csv', db)
+
+DL_logs = clean_columns('Game_Logs_Defensive_Lineman.csv', db)
+kicker_logs = clean_columns('Game_Logs_Kickers.csv', db)
+OL_logs = clean_columns('Game_Logs_Offensive_Line.csv', db)
+punter_logs = clean_columns('Game_Logs_Punters.csv', db)
+QB_logs = clean_columns('Game_Logs_Quarterback.csv', db)
+RB_logs = clean_columns('Game_Logs_Runningback.csv', db)
+WR_TE_logs = clean_columns('Game_Logs_Wide_Receiver_and_Tight_End.csv', db)
+
+dbListTables(db)
 ```
 
 ```{r}
-
+dbGetQuery(db, 'SELECT * FROM basic_stats')
 ```
 
 ## Including Plots
