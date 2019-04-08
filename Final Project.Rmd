@@ -88,13 +88,7 @@ dbListTables(db)
 ```{r}
 dbGetQuery(db, 'SELECT * FROM basic_stats')
 
-lapply(files, function(x) {
-    t <- read.table(x, header=TRUE) # load file
-    # apply function
-    out <- function(t)
-    # write to file
-    write.table(out, "path/to/output", sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
-})
+
 ```
 
 ## Including Plots
