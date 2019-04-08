@@ -51,9 +51,9 @@ clean_basic_stats <- function(basic_stats) {
 # Remove spaces in column names and replace periods with underscores so it's easier to read in SQL
 clean_columns <- function(df, db, include_name_year) {
   name <- str_replace(df, '.csv', '') %>% str_to_lower()
+  name <- str_replace(name, './', '') 
   df <- read.csv(df)
   df[df=="--"]<-NA
-  print(name)
   oldnames <- names(df)
   newnames <- oldnames %>%
       sapply(tolower) %>%
@@ -72,32 +72,29 @@ clean_columns <- function(df, db, include_name_year) {
 }
 
 db <- dbConnect(SQLite(), dbname="nfl.sqlite")
-basic_stats = clean_columns('Basic_Stats.csv', db, T)
-defensive_stats = clean_columns('Career_Stats_Defensive.csv', db)
-fg_kicker_stats = clean_columns('Career_Stats_Field_Goal_Kickers.csv', db)
-fumble_stats = clean_columns('Career_Stats_Fumbles.csv', db)
-kick_return_stats = clean_columns('Career_Stats_Kick_Return.csv', db)
-kickoff_stats = clean_columns('Career_Stats_Kickoff.csv', db)
-OL_stats = clean_columns('Career_Stats_Offensive_Line.csv', db)
-passing_stats = clean_columns('Career_Stats_Passing.csv', db)
-punt_return_stats = clean_columns('Career_Stats_Punt_Return.csv', db)
-punting_stats = clean_columns('Career_Stats_Punting.csv', db)
-receiving_stats = clean_columns('Career_Stats_Receiving.csv', db)
-rushing_stats = clean_columns('Career_Stats_Rushing.csv', db)
-
-DL_logs = clean_columns('Game_Logs_Defensive_Lineman.csv', db)
-kicker_logs = clean_columns('Game_Logs_Kickers.csv', db)
-OL_logs = clean_columns('Game_Logs_Offensive_Line.csv', db)
-punter_logs = clean_columns('Game_Logs_Punters.csv', db)
-QB_logs = clean_columns('Game_Logs_Quarterback.csv', db)
-RB_logs = clean_columns('Game_Logs_Runningback.csv', db)
-WR_TE_logs = clean_columns('Game_Logs_Wide_Receiver_and_Tight_End.csv', db)
+files <- list.files(pattern="*csv", full.names=TRUE, recursive=FALSE)
+for(file in files) {
+  if (file %>% str_detect('Basic_Stats')) {
+    clean_columns(file, db, T)
+  }
+  else {
+    clean_columns(file, db)
+  }
+}
 
 dbListTables(db)
 ```
 
 ```{r}
 dbGetQuery(db, 'SELECT * FROM basic_stats')
+
+lapply(files, function(x) {
+    t <- read.table(x, header=TRUE) # load file
+    # apply function
+    out <- function(t)
+    # write to file
+    write.table(out, "path/to/output", sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+})
 ```
 
 ## Including Plots
