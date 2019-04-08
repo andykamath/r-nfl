@@ -86,14 +86,36 @@ dbListTables(db)
 ```
 
 ```{r}
-dbGetQuery(db, 'SELECT * FROM basic_stats')
-
-
+basics <- dbGetQuery(db, 'select * from basic_stats')
+basics[,'fantasy_score'] <- 0
 ```
 
-## Including Plots
+```{r}
+# Let's rank players based on their passing abilities
+updateScore <- function(df, newdf) {
+   temp <- df %>%
+    select(player_id, fantasy_score) %>%
+    inner_join(newdf, by='player_id')
+  temp$fantasy_score <- temp$fantasy_score + temp$points 
+  temp <- temp %>% select(player_id, fantasy_score)
+  df <- df %>% left_join(temp, by='player_id', suffix=c('_old', '')) %>% select(-fantasy_score_old) 
+  return(df)
+}
 
-You can also embed plots, for example:
+passers <- dbGetQuery(db, paste("select first_name, last_name, basic_stats.player_id, year, team, ",
+  "(passes_attempted * passing_yards_per_attempt * completion_percentage +",
+  "4 * td_passes * percentage_of_tds_per_attempts +",
+  "2 * passes_longer_than_20_yards * completion_percentage -",
+  "2 * ints * int_rate)/(100 * games_played) as points",
+  "from career_stats_passing",
+  "join basic_stats on basic_stats.player_id=career_stats_passing.player_id",
+  "where year = 2016",
+  "order by points desc"))
+basics <- basics %>% updateScore(passers) %>% arrange(desc(fantasy_score))
+basics
+```
+
+
 
 ```{r pressure, echo=FALSE}
 plot(pressure)
