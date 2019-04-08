@@ -117,8 +117,16 @@ basics
 
 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+# Let's do rushing now
+rushers <- dbGetQuery(db, paste("select first_name, last_name, basic_stats.player_id, year, team, ",
+  "(60 * rushing_tds + rushing_yards)/(10 * games_played) as points",
+  "from career_stats_rushing",
+  "join basic_stats on basic_stats.player_id=career_stats_rushing.player_id",
+  "where year = 2016",
+  "order by points desc"))
+basics <- basics %>% updateScore(rushers) %>% arrange(desc(fantasy_score))
+basics
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
